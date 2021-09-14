@@ -1,8 +1,11 @@
 /*
-nvc++ -O2 -std=c++17 -stdpar=gpu -gpu=cc75 -gpu=managed -gpu=fma -gpu=fastmath -gpu=autocollapse -gpu=loadcache:L1 -gpu=unroll  src/propagate-tor-test_pstl.cpp   -o ./propagate_nvcpp_pstl
-nvc++ -O2 -std=c++17 -stdpar=multicore src/propagate-tor-test_pstl.cpp   -o ./propagate_nvcpp_pstl 
-g++ -O3 -I. -fopenmp -mavx512f -std=c++17 src/propagate-tor-test_pstl.cpp -lm -lgomp -Lpath-to-tbb-lib -ltbb  -o ./propagate_gcc_pstl
 */
+
+#include <oneapi/dpl/algorithm>
+#include <oneapi/dpl/execution>//<= why does it need tbb?
+#include <oneapi/dpl/iterator>
+#include <oneapi/dpl/random>
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,18 +16,12 @@ g++ -O3 -I. -fopenmp -mavx512f -std=c++17 src/propagate-tor-test_pstl.cpp -lm -l
 #include <iomanip>
 #include <sys/time.h>
 
-#include <algorithm>
 #include <vector>
 #include <memory>
 #include <numeric>
-#include <execution>
 
 #ifndef bsize
-#if defined(__NVCOMPILER_CUDA__)
 #define bsize 1
-#else
-#define bsize 128
-#endif//__NVCOMPILER_CUDA__
 #endif
 #ifndef ntrks
 #define ntrks 9600//8192
@@ -44,109 +41,9 @@ g++ -O3 -I. -fopenmp -mavx512f -std=c++17 src/propagate-tor-test_pstl.cpp -lm -l
 #define nlayer 20
 #endif
 
-#ifndef __NVCOMPILER_CUDA__
+#include <CL/sycl.hpp>
+using oneapi::dpl::counting_iterator;
 
-#if defined(__INTEL_COMPILER)
-#include <malloc.h>
-#else
-#include <mm_malloc.h>
-#endif
-
-constexpr int alloc_align  = (2*1024*1024);
-
-#endif
-
-namespace impl {
-
-   template <typename IntType>
-   class counting_iterator {
-       static_assert(std::numeric_limits<IntType>::is_integer, "Cannot instantiate counting_iterator with a non-integer type");
-     public:
-       using value_type = IntType;
-       using difference_type = typename std::make_signed<IntType>::type;
-       using pointer = IntType*;
-       using reference = IntType&;
-       using iterator_category = std::random_access_iterator_tag;
-
-       counting_iterator() : value(0) { }
-       explicit counting_iterator(IntType v) : value(v) { }
-
-       value_type operator*() const { return value; }
-       value_type operator[](difference_type n) const { return value + n; }
-
-       counting_iterator& operator++() { ++value; return *this; }
-       counting_iterator operator++(int) {
-         counting_iterator result{value};
-         ++value;
-         return result;
-       }  
-       counting_iterator& operator--() { --value; return *this; }
-       counting_iterator operator--(int) {
-         counting_iterator result{value};
-         --value;
-         return result;
-       }
-       counting_iterator& operator+=(difference_type n) { value += n; return *this; }
-       counting_iterator& operator-=(difference_type n) { value -= n; return *this; }
-
-       friend counting_iterator operator+(counting_iterator const& i, difference_type n)          { return counting_iterator(i.value + n);  }
-       friend counting_iterator operator+(difference_type n, counting_iterator const& i)          { return counting_iterator(i.value + n);  }
-       friend difference_type   operator-(counting_iterator const& x, counting_iterator const& y) { return x.value - y.value;  }
-       friend counting_iterator operator-(counting_iterator const& i, difference_type n)          { return counting_iterator(i.value - n);  }
-
-       friend bool operator==(counting_iterator const& x, counting_iterator const& y) { return x.value == y.value;  }
-       friend bool operator!=(counting_iterator const& x, counting_iterator const& y) { return x.value != y.value;  }
-       friend bool operator<(counting_iterator const& x, counting_iterator const& y)  { return x.value < y.value; }
-       friend bool operator<=(counting_iterator const& x, counting_iterator const& y) { return x.value <= y.value; }
-       friend bool operator>(counting_iterator const& x, counting_iterator const& y)  { return x.value > y.value; }
-       friend bool operator>=(counting_iterator const& x, counting_iterator const& y) { return x.value >= y.value; }
-
-     private:
-       IntType value;
-   };
-
-} //impl
-
-
-   template<typename Tp>
-   struct AlignedAllocator {
-     public:
-
-       typedef Tp value_type;
-
-       AlignedAllocator () {};
-
-       AlignedAllocator(const AlignedAllocator&) { }
-
-       template<typename Tp1> constexpr AlignedAllocator(const AlignedAllocator<Tp1>&) { }
-
-       ~AlignedAllocator() { }
-
-       Tp* address(Tp& x) const { return &x; }
-
-       std::size_t  max_size() const throw() { return size_t(-1) / sizeof(Tp); }
-
-       [[nodiscard]] Tp* allocate(std::size_t n){
-
-         Tp* ptr = nullptr;
-#if defined( __NVCOMPILER_CUDA__) || defined(__INTEL_COMPILER)
-	 ptr = (Tp*) malloc(n*sizeof(Tp));
-#elif !defined(DPCPP_BACKEND)
-         ptr = (Tp*)_mm_malloc(n*sizeof(Tp),alloc_align);
-#endif
-	 if(!ptr) throw std::bad_alloc();
-
-         return ptr;
-       }
-
-      void deallocate( Tp* p, std::size_t n) noexcept {
-#if defined(__NVCOMPILER_CUDA__) || defined(__INTEL_COMPILER)
-         free((void *)p);
-#elif !defined(DPCPP_BACKEND)
-         _mm_free((void *)p);
-#endif
-       }
-     };
 
 auto PosInMtrx = [](const size_t &&i, const size_t &&j, const size_t &&D, const size_t block_size = 1) constexpr {return block_size*(i*D+j);};
 
@@ -154,8 +51,8 @@ enum class FieldOrder{P2R_TRACKBLK_EVENT_LAYER_MATIDX_ORDER,
                       P2R_TRACKBLK_EVENT_MATIDX_LAYER_ORDER,
                       P2R_MATIDX_LAYER_TRACKBLK_EVENT_ORDER};
 
-using IntAllocator   = AlignedAllocator<int>;
-using FloatAllocator = AlignedAllocator<float>;
+using IntAllocator   = cl::sycl::usm_allocator<int, cl::sycl::usm::alloc::shared>;
+using FloatAllocator = cl::sycl::usm_allocator<float, cl::sycl::usm::alloc::shared>;
 
 const std::array<size_t, 36> SymOffsets66{0, 1, 3, 6, 10, 15, 1, 2, 4, 7, 11, 16, 3, 4, 5, 8, 12, 17, 6, 7, 8, 9, 13, 18, 10, 11, 12, 13, 14, 19, 15, 16, 17, 18, 19, 20};
 
@@ -201,6 +98,7 @@ float randn(float mu, float sigma) {
 template <typename T, typename Allocator, int n, int bSize>
 struct MPNX {
    using DataType = T;
+   using AllocType= Allocator;
 
    static constexpr int N    = n;
    static constexpr int BS   = bSize;
@@ -211,13 +109,13 @@ struct MPNX {
 
    std::vector<T, Allocator> data;
 
-   MPNX() : nTrks(bSize), nEvts(0), nLayers(0), data(n*bSize){}
+   MPNX(const Allocator alloc) : nTrks(bSize), nEvts(0), nLayers(0), data(n*bSize, alloc){}
 
-   MPNX(const int ntrks_, const int nevts_, const int nlayers_ = 1) :
+   MPNX(const int ntrks_, const int nevts_, const Allocator alloc, const int nlayers_ = 1) :
       nTrks(ntrks_),
       nEvts(nevts_),
       nLayers(nlayers_),
-      data(n*nTrks*nEvts*nLayers){
+      data(n*nTrks*nEvts*nLayers, alloc){
    }
 
    MPNX(const std::vector<T, Allocator> data_, const int ntrks_, const int nevts_, const int nlayers_ = 1) :
@@ -298,12 +196,17 @@ struct MPNXAccessor {
 };
 
 struct MPTRK {
+  using MP6F_alloc   = typename MP6F::AllocType;
+  using MP6x6SF_alloc= typename MP6x6SF::AllocType;
+  using MP1I_alloc   = typename MP1I::AllocType;
+  
   MP6F    par;
   MP6x6SF cov;
   MP1I    q;
 
-  MPTRK() : par(), cov(), q() {}
-  MPTRK(const int ntrks_, const int nevts_) : par(ntrks_, nevts_), cov(ntrks_, nevts_), q(ntrks_, nevts_) {}
+  MPTRK(sycl::queue cqueue) : par(MP6F_alloc(cqueue)), cov(MP6x6SF_alloc(cqueue)), q(MP1I_alloc(cqueue)){}
+  
+  MPTRK(const int ntrks_, const int nevts_, sycl::queue cqueue) : par(ntrks_, nevts_, MP6F_alloc(cqueue)), cov(ntrks_, nevts_, MP6x6SF_alloc(cqueue)), q(ntrks_, nevts_, MP6x6SF_alloc(cqueue)) {}
 
   //  MP22I   hitidx;
 };
@@ -323,9 +226,9 @@ struct MPTRKAccessor {
 };
 
 template<FieldOrder order>
-std::shared_ptr<MPTRK> prepareTracksN(struct ATRK inputtrk) {
+std::shared_ptr<MPTRK> prepareTracksN(struct ATRK inputtrk, sycl::queue cqueue) {
 
-  auto result = std::make_shared<MPTRK>(ntrks, nevts);
+  auto result = std::make_shared<MPTRK>(ntrks, nevts, cqueue);
   //create an accessor field:
   std::unique_ptr<MPTRKAccessor<order>> rA(new MPTRKAccessor<order>(*result));
 
@@ -354,11 +257,14 @@ std::shared_ptr<MPTRK> prepareTracksN(struct ATRK inputtrk) {
 
 
 struct MPHIT {
+  using MP3F_alloc   = typename MP3F::AllocType;
+  using MP3x3SF_alloc= typename MP3x3SF::AllocType;
+
   MP3F    pos;
   MP3x3SF cov;
 
-  MPHIT() : pos(), cov(){}
-  MPHIT(const int ntrks_, const int nevts_, const int nlayers_) : pos(ntrks_, nevts_, nlayers_), cov(ntrks_, nevts_, nlayers_) {}
+  MPHIT(sycl::queue cqueue) : pos(MP3F_alloc(cqueue)), cov(MP3x3SF_alloc(cqueue)){}
+  MPHIT(const int ntrks_, const int nevts_, const int nlayers_, sycl::queue cqueue) : pos(ntrks_, nevts_, MP3F_alloc(cqueue), nlayers_), cov(ntrks_, nevts_, MP3x3SF_alloc(cqueue), nlayers_) {}
 
 };
 
@@ -375,8 +281,8 @@ struct MPHITAccessor {
 };
 
 template<FieldOrder order>
-std::shared_ptr<MPHIT> prepareHitsN(struct AHIT inputhit) {
-  auto result = std::make_shared<MPHIT>(ntrks, nevts, nlayer);
+std::shared_ptr<MPHIT> prepareHitsN(struct AHIT inputhit, sycl::queue cqueue) {
+  auto result = std::make_shared<MPHIT>(ntrks, nevts, nlayer, cqueue);
   //create an accessor field:
   std::unique_ptr<MPHITAccessor<order>> rA(new MPHITAccessor<order>(*result));
 
@@ -1229,6 +1135,11 @@ int main (int argc, char* argv[]) {
 #else
    constexpr auto order = FieldOrder::P2R_MATIDX_LAYER_TRACKBLK_EVENT_ORDER;
 #endif
+   sycl::queue cq; //(sycl::gpu_selector{});
+  
+   FloatAllocator alloc_f32(cq);
+   IntAllocator   alloc_int(cq); 
+
    using MPTRKAccessorTp = MPTRKAccessor<order>;
    using MPHITAccessorTp = MPHITAccessor<order>;
 
@@ -1238,13 +1149,13 @@ int main (int argc, char* argv[]) {
    gettimeofday(&timecheck, NULL);
    setup_start = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
 
-   auto trkNPtr = prepareTracksN<order>(inputtrk);
+   auto trkNPtr = prepareTracksN<order>(inputtrk, cq);
    std::unique_ptr<MPTRKAccessorTp> trkNaccPtr(new MPTRKAccessorTp(*trkNPtr));
 
-   auto hitNPtr = prepareHitsN<order>(inputhit);
+   auto hitNPtr = prepareHitsN<order>(inputhit, cq);
    std::unique_ptr<MPHITAccessorTp> hitNaccPtr(new MPHITAccessorTp(*hitNPtr));
 
-   std::unique_ptr<MPTRK> outtrkNPtr(new MPTRK(ntrks, nevts));
+   std::unique_ptr<MPTRK> outtrkNPtr(new MPTRK(ntrks, nevts, cq));
    std::unique_ptr<MPTRKAccessorTp> outtrkNaccPtr(new MPTRKAccessorTp(*outtrkNPtr));
 
    gettimeofday(&timecheck, NULL);
@@ -1255,9 +1166,11 @@ int main (int argc, char* argv[]) {
    printf("Size of struct MPTRK trk[] = %ld\n", nevts*nb*sizeof(MPTRK));
    printf("Size of struct MPTRK outtrk[] = %ld\n", nevts*nb*sizeof(MPTRK));
    printf("Size of struct struct MPHIT hit[] = %ld\n", nevts*nb*sizeof(MPHIT));
-
-   auto policy = std::execution::par_unseq;
-
+  
+   auto policy = oneapi::dpl::execution::make_device_policy(cq);
+   //auto policy = oneapi::dpl::execution::dpcpp_default;  
+   
+#if 0
    std::cout << "Begin warming up..." << std::endl;
    //
    std::vector<float> x_(1000*nevts*nb);
@@ -1285,16 +1198,16 @@ int main (int argc, char* argv[]) {
    auto warm_time = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(warm_diff).count()) / 1e6;
 
    std::cout << "..done. Warmup time: " << warm_time << " secs. " << std::endl;
-
+#endif
    auto wall_start = std::chrono::high_resolution_clock::now();
 
    for(itr=0; itr<NITER; itr++) {
 
      const int outer_loop_range = nevts*nb;
 
-     std::for_each(policy,
-                   impl::counting_iterator(0),
-                   impl::counting_iterator(outer_loop_range),
+     oneapi::dpl::for_each(policy,
+                           counting_iterator(0),
+                           counting_iterator(outer_loop_range),
                    [=,&trkNacc    = *trkNaccPtr,
                       &hitNacc    = *hitNaccPtr,
                       &outtrkNacc = *outtrkNaccPtr] (const auto i) {
