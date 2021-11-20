@@ -1,5 +1,4 @@
 /*
-example :: dpcpp -std=c++17 -O3 propagate-tor-test_dpl.cpp  -dpl -o propagate-tor-test_dpl.exe
 */
 
 #include <oneapi/dpl/algorithm>
@@ -46,7 +45,7 @@ example :: dpcpp -std=c++17 -O3 propagate-tor-test_dpl.cpp  -dpl -o propagate-to
 using oneapi::dpl::counting_iterator;
 
 
-auto PosInMtrx = [](const int &&i, const int &&j, const int &&D, const int block_size = 1) constexpr {return block_size*(i*D+j);};
+auto PosInMtrx = [](const size_t &&i, const size_t &&j, const size_t &&D, const size_t block_size = 1) constexpr {return block_size*(i*D+j);};
 
 enum class FieldOrder{P2R_TRACKBLK_EVENT_LAYER_MATIDX_ORDER,
                       P2R_TRACKBLK_EVENT_MATIDX_LAYER_ORDER,
@@ -55,7 +54,7 @@ enum class FieldOrder{P2R_TRACKBLK_EVENT_LAYER_MATIDX_ORDER,
 using IntAllocator   = cl::sycl::usm_allocator<int, cl::sycl::usm::alloc::shared>;
 using FloatAllocator = cl::sycl::usm_allocator<float, cl::sycl::usm::alloc::shared>;
 
-const std::array<int, 36> SymOffsets66{0, 1, 3, 6, 10, 15, 1, 2, 4, 7, 11, 16, 3, 4, 5, 8, 12, 17, 6, 7, 8, 9, 13, 18, 10, 11, 12, 13, 14, 19, 15, 16, 17, 18, 19, 20};
+const std::array<size_t, 36> SymOffsets66{0, 1, 3, 6, 10, 15, 1, 2, 4, 7, 11, 16, 3, 4, 5, 8, 12, 17, 6, 7, 8, 9, 13, 18, 10, 11, 12, 13, 14, 19, 15, 16, 17, 18, 19, 20};
 
 struct ATRK {
   std::array<float,6> par;
@@ -234,17 +233,17 @@ std::shared_ptr<MPTRK> prepareTracksN(struct ATRK inputtrk, sycl::queue cqueue) 
   std::unique_ptr<MPTRKAccessor<order>> rA(new MPTRKAccessor<order>(*result));
 
   // store in element order for bunches of bsize matrices (a la matriplex)
-  for (int ie=0;ie<nevts;++ie) {
-    for (int ib=0;ib<nb;++ib) {
-      for (int it=0;it<bsize;++it) {
+  for (size_t ie=0;ie<nevts;++ie) {
+    for (size_t ib=0;ib<nb;++ib) {
+      for (size_t it=0;it<bsize;++it) {
         //const int l = it+ib*bsize+ie*nb*bsize;
         const int tid = ib+ie*nb;
     	  //par
-    	  for (int ip=0;ip<6;++ip) {
+    	  for (size_t ip=0;ip<6;++ip) {
           rA->par(ip, tid, it, 0) = (1+smear*randn(0,1))*inputtrk.par[ip];
     	  }
     	  //cov
-    	  for (int ip=0;ip<21;++ip) {
+    	  for (size_t ip=0;ip<21;++ip) {
           rA->cov(ip, tid, it, 0) = (1+smear*randn(0,1))*inputtrk.cov[ip];
     	  }
     	  //q
@@ -288,18 +287,18 @@ std::shared_ptr<MPHIT> prepareHitsN(struct AHIT inputhit, sycl::queue cqueue) {
   std::unique_ptr<MPHITAccessor<order>> rA(new MPHITAccessor<order>(*result));
 
   // store in element order for bunches of bsize matrices (a la matriplex)
-  for (int lay=0;lay<nlayer;++lay) {
-    for (int ie=0;ie<nevts;++ie) {
-      for (int ib=0;ib<nb;++ib) {
-        for (int it=0;it<bsize;++it) {
+  for (size_t lay=0;lay<nlayer;++lay) {
+    for (size_t ie=0;ie<nevts;++ie) {
+      for (size_t ib=0;ib<nb;++ib) {
+        for (size_t it=0;it<bsize;++it) {
           //const int l = it + ib*bsize + ie*nb*bsize + lay*nb*bsize*nevts;
           const int tid = ib + ie*nb;
         	//pos
-        	for (int ip=0;ip<3;++ip) {
+        	for (size_t ip=0;ip<3;++ip) {
             rA->pos(ip, tid, it, lay) = (1+smear*randn(0,1))*inputhit.pos[ip];
         	}
         	//cov
-        	for (int ip=0;ip<6;++ip) {
+        	for (size_t ip=0;ip<6;++ip) {
             rA->cov(ip, tid, it, lay) = (1+smear*randn(0,1))*inputhit.cov[ip];
         	}
         }
@@ -345,99 +344,99 @@ struct MPHIT_ {
 
 //////////////////////////////////////////////////////////////////////////////////////
 
-MPTRK_* bTk(MPTRK_* tracks, int ev, int ib) {
+MPTRK_* bTk(MPTRK_* tracks, size_t ev, size_t ib) {
   return &(tracks[ib + nb*ev]);
 }
 
-const MPTRK_* bTk(const MPTRK_* tracks, int ev, int ib) {
+const MPTRK_* bTk(const MPTRK_* tracks, size_t ev, size_t ib) {
   return &(tracks[ib + nb*ev]);
 }
 
-float q(const MP1I_* bq, int it){
+float q(const MP1I_* bq, size_t it){
   return (*bq).data[it];
 }
 //
-float par(const MP6F_* bpars, int it, int ipar){
+float par(const MP6F_* bpars, size_t it, size_t ipar){
   return (*bpars).data[it + ipar*bsize];
 }
-float x    (const MP6F_* bpars, int it){ return par(bpars, it, 0); }
-float y    (const MP6F_* bpars, int it){ return par(bpars, it, 1); }
-float z    (const MP6F_* bpars, int it){ return par(bpars, it, 2); }
-float ipt  (const MP6F_* bpars, int it){ return par(bpars, it, 3); }
-float phi  (const MP6F_* bpars, int it){ return par(bpars, it, 4); }
-float theta(const MP6F_* bpars, int it){ return par(bpars, it, 5); }
+float x    (const MP6F_* bpars, size_t it){ return par(bpars, it, 0); }
+float y    (const MP6F_* bpars, size_t it){ return par(bpars, it, 1); }
+float z    (const MP6F_* bpars, size_t it){ return par(bpars, it, 2); }
+float ipt  (const MP6F_* bpars, size_t it){ return par(bpars, it, 3); }
+float phi  (const MP6F_* bpars, size_t it){ return par(bpars, it, 4); }
+float theta(const MP6F_* bpars, size_t it){ return par(bpars, it, 5); }
 //
-float par(const MPTRK_* btracks, int it, int ipar){
+float par(const MPTRK_* btracks, size_t it, size_t ipar){
   return par(&(*btracks).par,it,ipar);
 }
-float x    (const MPTRK_* btracks, int it){ return par(btracks, it, 0); }
-float y    (const MPTRK_* btracks, int it){ return par(btracks, it, 1); }
-float z    (const MPTRK_* btracks, int it){ return par(btracks, it, 2); }
-float ipt  (const MPTRK_* btracks, int it){ return par(btracks, it, 3); }
-float phi  (const MPTRK_* btracks, int it){ return par(btracks, it, 4); }
-float theta(const MPTRK_* btracks, int it){ return par(btracks, it, 5); }
+float x    (const MPTRK_* btracks, size_t it){ return par(btracks, it, 0); }
+float y    (const MPTRK_* btracks, size_t it){ return par(btracks, it, 1); }
+float z    (const MPTRK_* btracks, size_t it){ return par(btracks, it, 2); }
+float ipt  (const MPTRK_* btracks, size_t it){ return par(btracks, it, 3); }
+float phi  (const MPTRK_* btracks, size_t it){ return par(btracks, it, 4); }
+float theta(const MPTRK_* btracks, size_t it){ return par(btracks, it, 5); }
 //
-float par(const MPTRK_* tracks, int ev, int tk, int ipar){
-  int ib = tk/bsize;
+float par(const MPTRK_* tracks, size_t ev, size_t tk, size_t ipar){
+  size_t ib = tk/bsize;
   const MPTRK_* btracks = bTk(tracks, ev, ib);
-  int it = tk % bsize;
+  size_t it = tk % bsize;
   return par(btracks, it, ipar);
 }
-float x    (const MPTRK_* tracks, int ev, int tk){ return par(tracks, ev, tk, 0); }
-float y    (const MPTRK_* tracks, int ev, int tk){ return par(tracks, ev, tk, 1); }
-float z    (const MPTRK_* tracks, int ev, int tk){ return par(tracks, ev, tk, 2); }
-float ipt  (const MPTRK_* tracks, int ev, int tk){ return par(tracks, ev, tk, 3); }
-float phi  (const MPTRK_* tracks, int ev, int tk){ return par(tracks, ev, tk, 4); }
-float theta(const MPTRK_* tracks, int ev, int tk){ return par(tracks, ev, tk, 5); }
+float x    (const MPTRK_* tracks, size_t ev, size_t tk){ return par(tracks, ev, tk, 0); }
+float y    (const MPTRK_* tracks, size_t ev, size_t tk){ return par(tracks, ev, tk, 1); }
+float z    (const MPTRK_* tracks, size_t ev, size_t tk){ return par(tracks, ev, tk, 2); }
+float ipt  (const MPTRK_* tracks, size_t ev, size_t tk){ return par(tracks, ev, tk, 3); }
+float phi  (const MPTRK_* tracks, size_t ev, size_t tk){ return par(tracks, ev, tk, 4); }
+float theta(const MPTRK_* tracks, size_t ev, size_t tk){ return par(tracks, ev, tk, 5); }
 //
 
-const MPHIT_* bHit(const MPHIT_* hits, int ev, int ib) {
+const MPHIT_* bHit(const MPHIT_* hits, size_t ev, size_t ib) {
   return &(hits[ib + nb*ev]);
 }
-const MPHIT_* bHit(const MPHIT_* hits, int ev, int ib,int lay) {
+const MPHIT_* bHit(const MPHIT_* hits, size_t ev, size_t ib,size_t lay) {
 return &(hits[lay + (ib*nlayer) +(ev*nlayer*nb)]);
 }
 //
-float pos(const MP3F_* hpos, int it, int ipar){
+float pos(const MP3F_* hpos, size_t it, size_t ipar){
   return (*hpos).data[it + ipar*bsize];
 }
-float x(const MP3F_* hpos, int it)    { return pos(hpos, it, 0); }
-float y(const MP3F_* hpos, int it)    { return pos(hpos, it, 1); }
-float z(const MP3F_* hpos, int it)    { return pos(hpos, it, 2); }
+float x(const MP3F_* hpos, size_t it)    { return pos(hpos, it, 0); }
+float y(const MP3F_* hpos, size_t it)    { return pos(hpos, it, 1); }
+float z(const MP3F_* hpos, size_t it)    { return pos(hpos, it, 2); }
 //
-float pos(const MPHIT_* hits, int it, int ipar){
+float pos(const MPHIT_* hits, size_t it, size_t ipar){
   return pos(&(*hits).pos,it,ipar);
 }
-float x(const MPHIT_* hits, int it)    { return pos(hits, it, 0); }
-float y(const MPHIT_* hits, int it)    { return pos(hits, it, 1); }
-float z(const MPHIT_* hits, int it)    { return pos(hits, it, 2); }
+float x(const MPHIT_* hits, size_t it)    { return pos(hits, it, 0); }
+float y(const MPHIT_* hits, size_t it)    { return pos(hits, it, 1); }
+float z(const MPHIT_* hits, size_t it)    { return pos(hits, it, 2); }
 //
-float pos(const MPHIT_* hits, int ev, int tk, int ipar){
-  int ib = tk/bsize;
+float pos(const MPHIT_* hits, size_t ev, size_t tk, size_t ipar){
+  size_t ib = tk/bsize;
   const MPHIT_* bhits = bHit(hits, ev, ib);
-  int it = tk % bsize;
+  size_t it = tk % bsize;
   return pos(bhits,it,ipar);
 }
-float x(const MPHIT_* hits, int ev, int tk)    { return pos(hits, ev, tk, 0); }
-float y(const MPHIT_* hits, int ev, int tk)    { return pos(hits, ev, tk, 1); }
-float z(const MPHIT_* hits, int ev, int tk)    { return pos(hits, ev, tk, 2); }
+float x(const MPHIT_* hits, size_t ev, size_t tk)    { return pos(hits, ev, tk, 0); }
+float y(const MPHIT_* hits, size_t ev, size_t tk)    { return pos(hits, ev, tk, 1); }
+float z(const MPHIT_* hits, size_t ev, size_t tk)    { return pos(hits, ev, tk, 2); }
 
 template<FieldOrder order>
 void convertTracks(MPTRK_* out,  const MPTRK* inp) {
   //create an accessor field:
   std::unique_ptr<MPTRKAccessor<order>> inpA(new MPTRKAccessor<order>(*inp));
   // store in element order for bunches of bsize matrices (a la matriplex)
-  for (int ie=0;ie<nevts;++ie) {
-    for (int ib=0;ib<nb;++ib) {
-      for (int it=0;it<bsize;++it) {
+  for (size_t ie=0;ie<nevts;++ie) {
+    for (size_t ib=0;ib<nb;++ib) {
+      for (size_t it=0;it<bsize;++it) {
         //const int l = it+ib*bsize+ie*nb*bsize;
         const int tid = ib+ie*nb;
     	  //par
-    	  for (int ip=0;ip<6;++ip) {
+    	  for (size_t ip=0;ip<6;++ip) {
     	    out[tid].par.data[it + ip*bsize] = inpA->par(ip, tid, it, 0);
     	  }
     	  //cov
-    	  for (int ip=0;ip<21;++ip) {
+    	  for (size_t ip=0;ip<21;++ip) {
     	    out[tid].cov.data[it + ip*bsize] = inpA->cov(ip, tid, it, 0);
     	  }
     	  //q
@@ -453,18 +452,18 @@ void convertHits(MPHIT_* out, const MPHIT* inp) {
   //create an accessor field:
   std::unique_ptr<MPHITAccessor<order>> inpA(new MPHITAccessor<order>(*inp));
   // store in element order for bunches of bsize matrices (a la matriplex)
-  for (int lay=0;lay<nlayer;++lay) {
-    for (int ie=0;ie<nevts;++ie) {
-      for (int ib=0;ib<nb;++ib) {
-        for (int it=0;it<bsize;++it) {
+  for (size_t lay=0;lay<nlayer;++lay) {
+    for (size_t ie=0;ie<nevts;++ie) {
+      for (size_t ib=0;ib<nb;++ib) {
+        for (size_t it=0;it<bsize;++it) {
           //const int l = it + ib*bsize + ie*nb*bsize + lay*nb*bsize*nevts;
           const int tid = ib + ie*nb;
         	//pos
-        	for (int ip=0;ip<3;++ip) {
+        	for (size_t ip=0;ip<3;++ip) {
             out[lay+nlayer*tid].pos.data[it + ip*bsize] = inpA->pos(ip, tid, it, lay);
         	}
         	//cov
-        	for (int ip=0;ip<6;++ip) {
+        	for (size_t ip=0;ip<6;++ip) {
             out[lay+nlayer*tid].cov.data[it + ip*bsize] = inpA->cov(ip, tid, it, lay);
         	}
         }
@@ -478,16 +477,16 @@ MPHIT_* prepareHits(struct AHIT inputhit) {
   MPHIT_* result = new MPHIT_[nlayer*nevts*nb];
 
   // store in element order for bunches of bsize matrices (a la matriplex)
-  for (int lay=0;lay<nlayer;++lay) {
-    for (int ie=0;ie<nevts;++ie) {
-      for (int ib=0;ib<nb;++ib) {
-        for (int it=0;it<bsize;++it) {
+  for (size_t lay=0;lay<nlayer;++lay) {
+    for (size_t ie=0;ie<nevts;++ie) {
+      for (size_t ib=0;ib<nb;++ib) {
+        for (size_t it=0;it<bsize;++it) {
         	//pos
-        	for (int ip=0;ip<3;++ip) {
+        	for (size_t ip=0;ip<3;++ip) {
         	  result[lay+nlayer*(ib + nb*ie)].pos.data[it + ip*bsize] = (1+smear*randn(0,1))*inputhit.pos[ip];
         	}
         	//cov
-        	for (int ip=0;ip<6;++ip) {
+        	for (size_t ip=0;ip<6;++ip) {
         	  result[lay+nlayer*(ib + nb*ie)].cov.data[it + ip*bsize] = (1+smear*randn(0,1))*inputhit.cov[ip];
         	}
         }
@@ -501,13 +500,13 @@ MPHIT_* prepareHits(struct AHIT inputhit) {
 ////////////////////////////////////////////////////////////////////////
 ///MAIN subroutines
 
-template<typename MP6x6SFAccessor_, int bsz = 1>
+template<typename MP6x6SFAccessor_, size_t bsz = 1>
 inline void MultHelixProp(const MP6x6F_ &a, const MP6x6SFAccessor_ &b, MP6x6F_ &c, const int tid) {
 
-  const float offset = b.GetThreadOffset(tid);
+  const auto offset = b.GetThreadOffset(tid);
 
   for (int it = 0;it < bsz; it++) {
-    const float boffset = offset+it;
+    const auto boffset = offset+it;
     c[ 0*bsz+it] = a[ 0*bsz+it]*b( 0, boffset) + a[ 1*bsz+it]*b( 1, boffset) + a[ 3*bsz+it]*b( 6, boffset) + a[ 4*bsz+it]*b(10, boffset);
     c[ 1*bsz+it] = a[ 0*bsz+it]*b( 1, boffset) + a[ 1*bsz+it]*b( 2, boffset) + a[ 3*bsz+it]*b( 7, boffset) + a[ 4*bsz+it]*b(11, boffset);
     c[ 2*bsz+it] = a[ 0*bsz+it]*b( 3, boffset) + a[ 1*bsz+it]*b( 4, boffset) + a[ 3*bsz+it]*b( 8, boffset) + a[ 4*bsz+it]*b(12, boffset);
@@ -550,13 +549,13 @@ inline void MultHelixProp(const MP6x6F_ &a, const MP6x6SFAccessor_ &b, MP6x6F_ &
   return;
 }
 
-template<typename MP6x6SFAccessor_, int bsz = 1>
+template<typename MP6x6SFAccessor_, size_t bsz = 1>
 inline void MultHelixPropTransp(const MP6x6F_ &a, const MP6x6F_ &b, MP6x6SFAccessor_ &c, const int tid) {
 
-  const float offset = c.GetThreadOffset(tid);
+  const auto offset = c.GetThreadOffset(tid);
   
   for (int it = 0;it < bsz; it++) {
-    const float boffset = offset+it;
+    const auto boffset = offset+it;
     
     c( 0, boffset) = b[ 0*bsz+it]*a[ 0*bsz+it] + b[ 1*bsz+it]*a[ 1*bsz+it] + b[ 3*bsz+it]*a[ 3*bsz+it] + b[ 4*bsz+it]*a[ 4*bsz+it];
     c( 1, boffset) = b[ 6*bsz+it]*a[ 0*bsz+it] + b[ 7*bsz+it]*a[ 1*bsz+it] + b[ 9*bsz+it]*a[ 3*bsz+it] + b[10*bsz+it]*a[ 4*bsz+it];
@@ -583,23 +582,23 @@ inline void MultHelixPropTransp(const MP6x6F_ &a, const MP6x6F_ &b, MP6x6SFAcces
   return;  
 }
 
-template<typename AccessorTp1, typename AccessorTp2, int bsz = 1>
+template<typename AccessorTp1, typename AccessorTp2, size_t bsz = 1>
 inline void KalmanGainInv(const AccessorTp1 &a, const AccessorTp2 &b, MP3x3_ &c, const int tid, const int lay) {
 
-  const float a_offset_ = a.GetThreadOffset(tid);
-  const float b_offset_ = b.GetThreadOffset(tid, lay);
+  const auto a_offset_ = a.GetThreadOffset(tid);
+  const auto b_offset_ = b.GetThreadOffset(tid, lay);
   
   for (int it = 0; it < bsz; ++it)
   {
-    const float a_offset = a_offset_+it;
-    const float b_offset = b_offset_+it;
+    const auto a_offset = a_offset_+it;
+    const auto b_offset = b_offset_+it;
 
-    float det =
+    double det =
         ((a(0, a_offset)+b(0, b_offset))*(((a(6, a_offset)+b(3, b_offset)) *(a(11,a_offset)+b(5, b_offset))) - ((a(7, a_offset)+b(4, b_offset)) *(a(7, a_offset)+b(4, b_offset))))) -
         ((a(1, a_offset)+b(1, b_offset))*(((a(1, a_offset)+b(1, b_offset)) *(a(11,a_offset)+b(5, b_offset))) - ((a(7, a_offset)+b(4, b_offset)) *(a(2, a_offset)+b(2, b_offset))))) +
         ((a(2, a_offset)+b(2, b_offset))*(((a(1, a_offset)+b(1, b_offset)) *(a(7, a_offset)+b(4, b_offset))) - ((a(2, a_offset)+b(2, b_offset)) *(a(6, a_offset)+b(3, b_offset)))));
 
-    float invdet = 1.0f / det;
+    float invdet = 1.0 / det;
 
     c[0*bsz+it] =   invdet*(((a(6, a_offset)+b(3, b_offset)) *(a(11,a_offset)+b(5, b_offset))) - ((a(7, a_offset)+b(4, b_offset)) *(a(7, a_offset)+b(4, b_offset))));
     c[1*bsz+it] =  -invdet*(((a(1, a_offset)+b(1, b_offset)) *(a(11,a_offset)+b(5, b_offset))) - ((a(2, a_offset)+b(2, b_offset)) *(a(7, a_offset)+b(4, b_offset))));
@@ -614,13 +613,13 @@ inline void KalmanGainInv(const AccessorTp1 &a, const AccessorTp2 &b, MP3x3_ &c,
   }
 }
 
-template<typename AccessorTp, int bsz = 1>
+template<typename AccessorTp, size_t bsz = 1>
 inline void KalmanGain(const AccessorTp &a, const MP3x3_ &b, MP3x6_ &c, const int tid) {
-  const float a_offset_= a.GetThreadOffset(tid);
+  const auto a_offset_= a.GetThreadOffset(tid);
 
   for (int it = 0; it < bsz; ++it)
   {
-    const float a_offset = a_offset_+it;
+    const auto a_offset = a_offset_+it;
 
     c[ 0*bsz+it] = a(0, a_offset)*b[0*bsz+it] + a( 1, a_offset)*b[3*bsz+it] + a( 2, a_offset)*b[6*bsz+it];
     c[ 1*bsz+it] = a(0, a_offset)*b[1*bsz+it] + a( 1, a_offset)*b[4*bsz+it] + a( 2, a_offset)*b[7*bsz+it];
@@ -647,7 +646,7 @@ inline void KalmanGain(const AccessorTp &a, const MP3x3_ &b, MP3x6_ &c, const in
 
 auto hipo = [](const float x, const float y) {return std::sqrt(x*x + y*y);};
 
-template <class MPTRKAccessors, class MPHITAccessors, int bsz = 1>
+template <class MPTRKAccessors, class MPHITAccessors, size_t bsz = 1>
 void KalmanUpdate(MPTRKAccessors       *obtracksPtr,
 		  const MPHITAccessors *bhitsPtr,
 		  const int tid,
@@ -668,21 +667,21 @@ void KalmanUpdate(MPTRKAccessors       *obtracksPtr,
   MP2x2SF_ resErr_loc;
   //MP3x3SF_ resErr_glo;
   
-  const float terr_offset = trkErr.GetThreadOffset(tid);
-  const float ipar_offset = inPar.GetThreadOffset(tid); 
-  const float herr_offset = hitErr.GetThreadOffset(tid, lay);   
+  const auto terr_offset = trkErr.GetThreadOffset(tid);
+  const auto ipar_offset = inPar.GetThreadOffset(tid); 
+  const auto herr_offset = hitErr.GetThreadOffset(tid, lay);   
   
-  for (int it = 0;it < bsz; ++it) {
-    const float terr_blk_offset = terr_offset+it;
-    const float herr_blk_offset = herr_offset+it;    
-    const float ipar_blk_offset = ipar_offset+it;
+  for (size_t it = 0;it < bsz; ++it) {
+    const auto terr_blk_offset = terr_offset+it;
+    const auto herr_blk_offset = herr_offset+it;    
+    const auto ipar_blk_offset = ipar_offset+it;
     
-    const float msPX = msP(iparX, tid, it, lay);
-    const float msPY = msP(iparY, tid, it, lay);
-    const float inParX = inPar(iparX, ipar_blk_offset);
-    const float inParY = inPar(iparY, ipar_blk_offset);          
+    const auto msPX = msP(iparX, tid, it, lay);
+    const auto msPY = msP(iparY, tid, it, lay);
+    const auto inParX = inPar(iparX, ipar_blk_offset);
+    const auto inParY = inPar(iparY, ipar_blk_offset);          
   
-    const float r = hipo(msPX, msPY);
+    const auto r = hipo(msPX, msPY);
     rotT00[it] = -(msPY + inParY) / (2*r);
     rotT01[it] =  (msPX + inParX) / (2*r);    
     
@@ -695,10 +694,10 @@ void KalmanUpdate(MPTRKAccessors       *obtracksPtr,
     resErr_loc[ 2*bsz+it] = (trkErr(5, terr_blk_offset) + hitErr(5, herr_blk_offset));
   } 
   
-  for (int it=0;it<bsz;++it) {
+  for (size_t it=0;it<bsz;++it) {
   
-    const float det = (float)resErr_loc[0*bsz+it] * resErr_loc[2*bsz+it] -
-                      (float)resErr_loc[1*bsz+it] * resErr_loc[1*bsz+it];
+    const double det = (double)resErr_loc[0*bsz+it] * resErr_loc[2*bsz+it] -
+                       (double)resErr_loc[1*bsz+it] * resErr_loc[1*bsz+it];
     const float s   = 1.f / det;
     const float tmp = s * resErr_loc[2*bsz+it];
     resErr_loc[1*bsz+it] *= -s;
@@ -709,8 +708,8 @@ void KalmanUpdate(MPTRKAccessors       *obtracksPtr,
   MP3x6_ kGain;
   
 #pragma omp simd
-  for (int it=0; it<bsz; ++it) {  
-    const float terr_blk_offset = terr_offset+it;
+  for (size_t it=0; it<bsz; ++it) {  
+    const auto terr_blk_offset = terr_offset+it;
     //
     kGain[ 0*bsz+it] = trkErr( 0, terr_blk_offset)*(rotT00[it]*resErr_loc[ 0*bsz+it]) +
 	                        trkErr( 1, terr_blk_offset)*(rotT01[it]*resErr_loc[ 0*bsz+it]) +
@@ -757,19 +756,19 @@ void KalmanUpdate(MPTRKAccessors       *obtracksPtr,
   }  
      
   MP2F_ res_loc;   
-  for (int it = 0; it < bsz; ++it) { 
-    const float ipar_blk_offset = ipar_offset+it;
+  for (size_t it = 0; it < bsz; ++it) { 
+    const auto ipar_blk_offset = ipar_offset+it;
     
-    const float msPX = msP(iparX, tid, it, lay);
-    const float msPY = msP(iparY, tid, it, lay);
-    const float msPZ = msP(iparZ, tid, it, lay);    
-    const float inParX = inPar(iparX, ipar_blk_offset);
-    const float inParY = inPar(iparY, ipar_blk_offset);     
-    const float inParZ = inPar(iparZ, ipar_blk_offset); 
+    const auto msPX = msP(iparX, tid, it, lay);
+    const auto msPY = msP(iparY, tid, it, lay);
+    const auto msPZ = msP(iparZ, tid, it, lay);    
+    const auto inParX = inPar(iparX, ipar_blk_offset);
+    const auto inParY = inPar(iparY, ipar_blk_offset);     
+    const auto inParZ = inPar(iparZ, ipar_blk_offset); 
     
-    const float inParIpt   = inPar(iparIpt, ipar_blk_offset);
-    const float inParPhi   = inPar(iparPhi, ipar_blk_offset);
-    const float inParTheta = inPar(iparTheta, ipar_blk_offset);            
+    const auto inParIpt   = inPar(iparIpt, ipar_blk_offset);
+    const auto inParPhi   = inPar(iparPhi, ipar_blk_offset);
+    const auto inParTheta = inPar(iparTheta, ipar_blk_offset);            
     
     res_loc[0*bsz+it] =  rotT00[it]*(msPX - inParX) + rotT01[it]*(msPY - inParY);
     res_loc[1*bsz+it] =  msPZ - inParZ;
@@ -783,8 +782,8 @@ void KalmanUpdate(MPTRKAccessors       *obtracksPtr,
   }
 
    MP6x6SF_ newErr;
-   for (int it=0;it<bsize;++it)   {
-     const float terr_blk_offset = terr_offset+it;
+   for (size_t it=0;it<bsize;++it)   {
+     const auto terr_blk_offset = terr_offset+it;
 
      newErr[ 0*bsz+it] = kGain[ 0*bsz+it]*rotT00[it]*trkErr( 0, terr_blk_offset) +
                          kGain[ 0*bsz+it]*rotT01[it]*trkErr( 1, terr_blk_offset) +
@@ -907,13 +906,13 @@ auto sincos4 = [](const float x, float& sin, float& cos) {
    sin  = x - 0.16666667f*x*x2;
 };
 
-constexpr float kfact= 100/3.8f;
+constexpr float kfact= 100/3.8;
 constexpr int Niter=5;
 
-template <class MPTRKAccessors, class MPHITAccessors, int bsz = 1>
-void propagateToR(MPTRKAccessors       *obtracks,
-                  const MPTRKAccessors *btracks,
-                  const MPHITAccessors *bhits,
+template <class MPTRKAccessors, class MPHITAccessors, size_t bsz = 1>
+void propagateToR(MPTRKAccessors       &obtracks,
+                  const MPTRKAccessors &btracks,
+                  const MPHITAccessors &bhits,
                   const int tid,
                   const int lay) {
 
@@ -922,25 +921,25 @@ void propagateToR(MPTRKAccessors       *obtracks,
   using MP6x6SFaccessor = typename MPTRKAccessors::MP6x6SFAccessor;
   using MP3Faccessor    = typename MPHITAccessors::MP3FAccessor;
   
-  const MP6Faccessor &inPar    = btracks->par;
-  const MP1Iaccessor &inChg    = btracks->q  ;
-  const MP6x6SFaccessor &inErr = btracks->cov;
+  const MP6Faccessor &inPar    = btracks.par;
+  const MP1Iaccessor &inChg    = btracks.q  ;
+  const MP6x6SFaccessor &inErr = btracks.cov;
 
-  const MP3Faccessor &msP      = bhits->pos;
+  const MP3Faccessor &msP      = bhits.pos;
 
-  MP6x6SFaccessor &outErr    = obtracks->cov;
-  MP6Faccessor    &outPar    = obtracks->par;
+  MP6x6SFaccessor &outErr    = obtracks.cov;
+  MP6Faccessor    &outPar    = obtracks.par;
 
-  const float par_offset = inPar.GetThreadOffset(tid);
+  const auto par_offset = inPar.GetThreadOffset(tid);
   
   MP6x6F_ errorProp;
   MP6x6F_ temp;
   
-  for (int it = 0; it < bsz; ++it) {
-    const float par_blk_offset  = par_offset+it;
+  for (size_t it = 0; it < bsz; ++it) {
+    const auto par_blk_offset  = par_offset+it;
     	
     //initialize erroProp to identity matrix
-    //for (int i=0;i<6;++i) errorProp.data[bsize*PosInMtrx(i,i,6) + it] = 1.f; 
+    //for (size_t i=0;i<6;++i) errorProp.data[bsize*PosInMtrx(i,i,6) + it] = 1.f; 
     errorProp[PosInMtrx(0,0,6, bsz) + it] = 1.0f;
     errorProp[PosInMtrx(1,1,6, bsz) + it] = 1.0f;
     errorProp[PosInMtrx(2,2,6, bsz) + it] = 1.0f;
@@ -948,21 +947,21 @@ void propagateToR(MPTRKAccessors       *obtracks,
     errorProp[PosInMtrx(4,4,6, bsz) + it] = 1.0f;
     errorProp[PosInMtrx(5,5,6, bsz) + it] = 1.0f;
     //
-    const float xin = inPar(iparX, par_blk_offset);
-    const float yin = inPar(iparY, par_blk_offset);     
-    const float zin = inPar(iparZ, par_blk_offset); 
+    const auto xin = inPar(iparX, par_blk_offset);
+    const auto yin = inPar(iparY, par_blk_offset);     
+    const auto zin = inPar(iparZ, par_blk_offset); 
     
-    const float iptin   = inPar(iparIpt,   par_blk_offset);
-    const float phiin   = inPar(iparPhi,   par_blk_offset);
-    const float thetain = inPar(iparTheta, par_blk_offset); 
+    const auto iptin   = inPar(iparIpt,   par_blk_offset);
+    const auto phiin   = inPar(iparPhi,   par_blk_offset);
+    const auto thetain = inPar(iparTheta, par_blk_offset); 
     //
-    float r0 = hipo(xin, yin);
-    const float k = inChg(0, tid, it, 0)*kfact;
+    auto r0 = hipo(xin, yin);
+    const auto k = inChg(0, tid, it, 0)*kfact;
     
-    const float xmsP = msP(iparX, tid, it, lay);
-    const float ymsP = msP(iparY, tid, it, lay);
+    const auto xmsP = msP(iparX, tid, it, lay);
+    const auto ymsP = msP(iparY, tid, it, lay);
     
-    const float r = hipo(xmsP, ymsP);    
+    const auto r = hipo(xmsP, ymsP);    
     
     outPar(iparX,par_blk_offset) = xin;
     outPar(iparY,par_blk_offset) = yin;
@@ -972,28 +971,27 @@ void propagateToR(MPTRKAccessors       *obtracks,
     outPar(iparPhi,par_blk_offset)   = phiin;
     outPar(iparTheta,par_blk_offset) = thetain;
     
-    const float kinv  = 1.f/k;
-    const float pt = 1.f/iptin;
+    const auto kinv  = 1.f/k;
+    const auto pt = 1.f/iptin;
 
-    float D = 0.f, cosa = 0.f, sina = 0.f, id = 0.f;
+    auto D = 0.f, cosa = 0.f, sina = 0.f, id = 0.f;
     //no trig approx here, phi can be large
-    float cosPorT = std::cos(phiin), sinPorT = std::sin(phiin);
-    float pxin = cosPorT*pt;
-    float pyin = sinPorT*pt;
+    auto cosPorT = std::cos(phiin), sinPorT = std::sin(phiin);
+    auto pxin = cosPorT*pt;
+    auto pyin = sinPorT*pt;
 
     //derivatives initialized to value for first iteration, i.e. distance = r-r0in
-    float dDdx = r0 > 0.f ? -xin/r0 : 0.f;
-    float dDdy = r0 > 0.f ? -yin/r0 : 0.f;
-    float dDdipt = 0.;
-    float dDdphi = 0.; 
-
+    auto dDdx = r0 > 0.f ? -xin/r0 : 0.f;
+    auto dDdy = r0 > 0.f ? -yin/r0 : 0.f;
+    auto dDdipt = 0.;
+    auto dDdphi = 0.;  
 #pragma unroll    
     for (int i = 0; i < Niter; ++i)
     {
      //compute distance and path for the current iteration
-      const float xout = outPar(iparX, par_blk_offset);
-      const float yout = outPar(iparY, par_blk_offset);     
-  
+      const auto xout = outPar(iparX, par_blk_offset);
+      const auto yout = outPar(iparY, par_blk_offset);     
+      
       r0 = hipo(xout, yout);
       id = (r-r0);
       D+=id;
@@ -1002,19 +1000,19 @@ void propagateToR(MPTRKAccessors       *obtracks,
       //update derivatives on total distance
       if (i+1 != Niter) {
 
-	const float oor0 = (r0>0.f && std::abs(r-r0)<0.0001f) ? 1.f/r0 : 0.f;
+	const auto oor0 = (r0>0.f && std::abs(r-r0)<0.0001f) ? 1.f/r0 : 0.f;
 
-	const float dadipt = id*kinv;
+	const auto dadipt = id*kinv;
 
-	const float dadx = -xout*iptin*kinv*oor0;
-	const float dady = -yout*iptin*kinv*oor0;
+	const auto dadx = -xout*iptin*kinv*oor0;
+	const auto dady = -yout*iptin*kinv*oor0;
 
-	const float pxca = pxin*cosa;
-	const float pxsa = pxin*sina;
-	const float pyca = pyin*cosa;
-	const float pysa = pyin*sina;
+	const auto pxca = pxin*cosa;
+	const auto pxsa = pxin*sina;
+	const auto pyca = pyin*cosa;
+	const auto pysa = pyin*sina;
 
-	float tmp = k*dadx;
+	auto tmp = k*dadx;
 	dDdx   -= ( xout*(1.f + tmp*(pxca - pysa)) + yout*tmp*(pyca + pxsa) )*oor0;
 	tmp = k*dady;
 	dDdy   -= ( xout*tmp*(pxca - pysa) + yout*(1.f + tmp*(pyca + pxsa)) )*oor0;
@@ -1023,7 +1021,8 @@ void propagateToR(MPTRKAccessors       *obtracks,
 	dDdipt -= k*( xout*(pxca*tmp - pysa*tmp - pyca - pxsa + pyin) +
 		      yout*(pyca*tmp + pxsa*tmp - pysa + pxca - pxin))*pt*oor0;
 	dDdphi += k*( xout*(pysa - pxin + pxca) - yout*(pxsa - pyin + pyca))*oor0;
-      }      
+      } 
+      
       //update parameters
       outPar(iparX,par_blk_offset) = xout + k*(pxin*sina - pyin*(1.f-cosa));
       outPar(iparY,par_blk_offset) = yout + k*(pyin*sina + pxin*(1.f-cosa));
@@ -1032,11 +1031,11 @@ void propagateToR(MPTRKAccessors       *obtracks,
       pyin = pyin*cosa + pxinold*sina;   
     }
     //
-    const float alpha  = D*iptin*kinv;
-    const float dadx   = dDdx*iptin*kinv;
-    const float dady   = dDdy*iptin*kinv;
-    const float dadipt = (iptin*dDdipt + D)*kinv;
-    const float dadphi = dDdphi*iptin*kinv;
+    const auto alpha  = D*iptin*kinv;
+    const auto dadx   = dDdx*iptin*kinv;
+    const auto dady   = dDdy*iptin*kinv;
+    const auto dadipt = (iptin*dDdipt + D)*kinv;
+    const auto dadphi = dDdphi*iptin*kinv;
 
     sincos4(alpha, sina, cosa);
     
@@ -1131,10 +1130,11 @@ int main (int argc, char* argv[]) {
 
    long setup_start, setup_stop;
    struct timeval timecheck;
-
+#if defined(__NVCOMPILER_CUDA__)
    constexpr auto order = FieldOrder::P2R_TRACKBLK_EVENT_LAYER_MATIDX_ORDER;
-   //constexpr auto order = FieldOrder::P2R_MATIDX_LAYER_TRACKBLK_EVENT_ORDER;
-
+#else
+   constexpr auto order = FieldOrder::P2R_MATIDX_LAYER_TRACKBLK_EVENT_ORDER;
+#endif
    sycl::queue cq; //(sycl::gpu_selector{});
   
    FloatAllocator alloc_f32(cq);
@@ -1200,6 +1200,9 @@ int main (int argc, char* argv[]) {
    std::cout << "..done. Warmup time: " << warm_time << " secs. " << std::endl;
 #endif
    auto wall_start = std::chrono::high_resolution_clock::now();
+   
+   auto xxx = outtrkNaccPtr.get();
+   auto yyy = hitNaccPtr.get();
 
    for(itr=0; itr<NITER; itr++) {
 
@@ -1208,15 +1211,29 @@ int main (int argc, char* argv[]) {
      oneapi::dpl::for_each(policy,
                            counting_iterator(0),
                            counting_iterator(outer_loop_range),
-
-                   [=,trkNacc    = trkNaccPtr.get(),
-                      hitNacc    = hitNaccPtr.get(),
-                      outtrkNacc = outtrkNaccPtr.get()] (const auto i) {
+#if 0
+                   [=,&trkNacc    = *trkNaccPtr,
+                      &hitNacc    = *hitNaccPtr,
+                      &outtrkNacc = *outtrkNaccPtr] (const auto i) {
                      for(int layer=0; layer<nlayer; ++layer) {
                        propagateToR<MPTRKAccessorTp, MPHITAccessorTp, bsize>(outtrkNacc, trkNacc, hitNacc, i, layer);
                        KalmanUpdate<MPTRKAccessorTp, MPHITAccessorTp, bsize>(outtrkNacc, hitNacc, i, layer);
                      }
-                   });
+                   }
+#else
+                   [=] (const auto i) {
+                     for(int layer=0; layer<nlayer; ++layer) {
+                       //propagateToR<MPTRKAccessorTp, MPHITAccessorTp, bsize>(outtrkNacc, trkNacc, hitNacc, i, layer);
+                       KalmanUpdate<MPTRKAccessorTp, MPHITAccessorTp, bsize>(xxx, yyy, i, layer);
+                     }
+                   }
+
+#endif                 
+                   );
+#if defined(__NVCOMPILER_CUDA__) 
+      //convertTracks<order>(outtrk, outtrkNPtr.get());
+#endif
+
    } //end of itr loop
 
    auto wall_stop = std::chrono::high_resolution_clock::now();
@@ -1234,8 +1251,8 @@ int main (int argc, char* argv[]) {
    float avgx = 0, avgy = 0, avgz = 0, avgr = 0;
    float avgpt = 0, avgphi = 0, avgtheta = 0;
    float avgdx = 0, avgdy = 0, avgdz = 0, avgdr = 0;
-   for (int ie=0;ie<nevts;++ie) {
-     for (int it=0;it<ntrks;++it) {
+   for (size_t ie=0;ie<nevts;++ie) {
+     for (size_t it=0;it<ntrks;++it) {
        float x_ = x(outtrk,ie,it);
        float y_ = y(outtrk,ie,it);
        float z_ = z(outtrk,ie,it);
@@ -1275,8 +1292,8 @@ int main (int argc, char* argv[]) {
 
    float stdx = 0, stdy = 0, stdz = 0, stdr = 0;
    float stddx = 0, stddy = 0, stddz = 0, stddr = 0;
-   for (int ie=0;ie<nevts;++ie) {
-     for (int it=0;it<ntrks;++it) {
+   for (size_t ie=0;ie<nevts;++ie) {
+     for (size_t it=0;it<ntrks;++it) {
        float x_ = x(outtrk,ie,it);
        float y_ = y(outtrk,ie,it);
        float z_ = z(outtrk,ie,it);
