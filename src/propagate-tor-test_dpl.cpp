@@ -648,8 +648,8 @@ inline void KalmanGain(const AccessorTp &a, const MP3x3_ &b, MP3x6_ &c, const in
 auto hipo = [](const float x, const float y) {return std::sqrt(x*x + y*y);};
 
 template <class MPTRKAccessors, class MPHITAccessors, int bsz = 1>
-void KalmanUpdate(MPTRKAccessors       *obtracksPtr,
-		  const MPHITAccessors *bhitsPtr,
+void KalmanUpdate(MPTRKAccessors       obtracksPtr,
+		  const MPHITAccessors bhitsPtr,
 		  const int tid,
 		  const int lay) {
   using MP6Faccessor    = typename MPTRKAccessors::MP6FAccessor;
@@ -657,11 +657,11 @@ void KalmanUpdate(MPTRKAccessors       *obtracksPtr,
   using MP3x3SFaccessor = typename MPHITAccessors::MP3x3SFAccessor;
   using MP3Faccessor    = typename MPHITAccessors::MP3FAccessor;
   
-  const MP3x3SFaccessor &hitErr   = bhitsPtr->cov;
-  const MP3Faccessor    &msP      = bhitsPtr->pos;
+  const MP3x3SFaccessor &hitErr   = bhitsPtr.cov;
+  const MP3Faccessor    &msP      = bhitsPtr.pos;
 
-  MP6x6SFaccessor  &trkErr = obtracksPtr->cov;
-  MP6Faccessor     &inPar  = obtracksPtr->par;		  
+  MP6x6SFaccessor  &trkErr = obtracksPtr.cov;
+  MP6Faccessor     &inPar  = obtracksPtr.par;		  
   
   MP1F_    rotT00;
   MP1F_    rotT01;
@@ -911,9 +911,9 @@ constexpr float kfact= 100/3.8f;
 constexpr int Niter=5;
 
 template <class MPTRKAccessors, class MPHITAccessors, int bsz = 1>
-void propagateToR(MPTRKAccessors       *obtracks,
-                  const MPTRKAccessors *btracks,
-                  const MPHITAccessors *bhits,
+void propagateToR(MPTRKAccessors       obtracks,
+                  const MPTRKAccessors btracks,
+                  const MPHITAccessors bhits,
                   const int tid,
                   const int lay) {
 
@@ -922,14 +922,14 @@ void propagateToR(MPTRKAccessors       *obtracks,
   using MP6x6SFaccessor = typename MPTRKAccessors::MP6x6SFAccessor;
   using MP3Faccessor    = typename MPHITAccessors::MP3FAccessor;
   
-  const MP6Faccessor &inPar    = btracks->par;
-  const MP1Iaccessor &inChg    = btracks->q  ;
-  const MP6x6SFaccessor &inErr = btracks->cov;
+  const MP6Faccessor &inPar    = btracks.par;
+  const MP1Iaccessor &inChg    = btracks.q  ;
+  const MP6x6SFaccessor &inErr = btracks.cov;
 
-  const MP3Faccessor &msP      = bhits->pos;
+  const MP3Faccessor &msP      = bhits.pos;
 
-  MP6x6SFaccessor &outErr    = obtracks->cov;
-  MP6Faccessor    &outPar    = obtracks->par;
+  MP6x6SFaccessor &outErr    = obtracks.cov;
+  MP6Faccessor    &outPar    = obtracks.par;
 
   const float par_offset = inPar.GetThreadOffset(tid);
   
@@ -1149,14 +1149,17 @@ int main (int argc, char* argv[]) {
    gettimeofday(&timecheck, NULL);
    setup_start = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
 
-   auto trkNPtr = prepareTracksN<order>(inputtrk, cq);
+   auto trkNPtr = prepareTracksN<order>(inputtrk, cq);//1
    std::unique_ptr<MPTRKAccessorTp> trkNaccPtr(new MPTRKAccessorTp(*trkNPtr));
+   auto &trkNacc = *trkNaccPtr;
 
-   auto hitNPtr = prepareHitsN<order>(inputhit, cq);
+   auto hitNPtr = prepareHitsN<order>(inputhit, cq);//2
    std::unique_ptr<MPHITAccessorTp> hitNaccPtr(new MPHITAccessorTp(*hitNPtr));
+   auto &hitNacc = *hitNaccPtr;
 
-   std::unique_ptr<MPTRK> outtrkNPtr(new MPTRK(ntrks, nevts, cq));
+   std::unique_ptr<MPTRK> outtrkNPtr(new MPTRK(ntrks, nevts, cq));//3
    std::unique_ptr<MPTRKAccessorTp> outtrkNaccPtr(new MPTRKAccessorTp(*outtrkNPtr));
+   auto &outtrkNacc = *outtrkNaccPtr;
 
    gettimeofday(&timecheck, NULL);
    setup_stop = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
@@ -1209,9 +1212,7 @@ int main (int argc, char* argv[]) {
                            counting_iterator(0),
                            counting_iterator(outer_loop_range),
 
-                   [=,trkNacc    = trkNaccPtr.get(),
-                      hitNacc    = hitNaccPtr.get(),
-                      outtrkNacc = outtrkNaccPtr.get()] (const auto i) {
+                   [=] (const auto i) {
                      for(int layer=0; layer<nlayer; ++layer) {
                        propagateToR<MPTRKAccessorTp, MPHITAccessorTp, bsize>(outtrkNacc, trkNacc, hitNacc, i, layer);
                        KalmanUpdate<MPTRKAccessorTp, MPHITAccessorTp, bsize>(outtrkNacc, hitNacc, i, layer);
