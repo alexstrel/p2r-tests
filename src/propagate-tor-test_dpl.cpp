@@ -1173,11 +1173,10 @@ int main (int argc, char* argv[]) {
    auto policy = oneapi::dpl::execution::make_device_policy(cq);
    //auto policy = oneapi::dpl::execution::dpcpp_default;  
    
-#if 0
    std::cout << "Begin warming up..." << std::endl;
    //
-   std::vector<float> x_(1000*nevts*nb);
-   std::vector<float> y_(1000*nevts*nb);
+   std::vector<float, decltype(alloc_f32)> x_(10*nevts*nb, alloc_f32);
+   std::vector<float, decltype(alloc_f32)> y_(10*nevts*nb, alloc_f32);
 
    auto warm_start = std::chrono::high_resolution_clock::now();
 
@@ -1187,12 +1186,11 @@ int main (int argc, char* argv[]) {
    double sum = 0.0;
    for(int i = 0; i < 1000;i++)
    {
-     float lsum = std::transform_reduce(policy,
+     float lsum = oneapi::dpl::transform_reduce(policy,
                                 x_.begin(),
                                 x_.end(),
                                 y_.begin(),
-                                static_cast<float>(0.0),
-                                std::plus<float>(),
+                                0.0f, std::plus<float>(),
                                 [=](const auto &xi, const auto &yi) { return xi*yi;} );
      sum += lsum;
    }
@@ -1201,7 +1199,7 @@ int main (int argc, char* argv[]) {
    auto warm_time = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(warm_diff).count()) / 1e6;
 
    std::cout << "..done. Warmup time: " << warm_time << " secs. " << std::endl;
-#endif
+
    auto wall_start = std::chrono::high_resolution_clock::now();
 
    for(itr=0; itr<NITER; itr++) {
