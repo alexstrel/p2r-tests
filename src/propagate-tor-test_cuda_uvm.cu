@@ -139,13 +139,13 @@ decltype(auto) p2r_get_streams(const int n){
 }
 
 template <typename data_tp, typename Allocator, typename stream_t>
-void p2r_l2cache_setaside(std::vector<data_tp, Allocator> &v, stream_t stream, const int devId, const int num_bytes, const float hit_ratio = 0.5){
+void p2r_l2cache_setaside(std::vector<data_tp, Allocator> &v, stream_t stream, const int devId, const int num_bytes, const int offset, const float hit_ratio = 0.5){
 
   cudaDeviceProp prop;                                      
   cudaGetDeviceProperties( &prop, devId); 
   //
   cudaStreamAttrValue stream_attribute;                                                                // Stream level attributes data structure
-  stream_attribute.accessPolicyWindow.base_ptr  = reinterpret_cast<void*>(v.data());                   // Global Memory data pointer
+  stream_attribute.accessPolicyWindow.base_ptr  = reinterpret_cast<void*>(v.data()) + offset;          // Global Memory data pointer
   stream_attribute.accessPolicyWindow.num_bytes = std::min(prop.accessPolicyMaxWindowSize, num_bytes); // Number of bytes for persistence access (minimum of user defined num_bytes and max window size)
   stream_attribute.accessPolicyWindow.hitRatio  = hit_ratio ;                                          // Hint for cache hit ratio
   stream_attribute.accessPolicyWindow.hitProp   = cudaAccessPropertyPersisting;                        // Persistence Property
@@ -162,7 +162,7 @@ void p2r_reset_l2cache(std::vector<data_tp, Allocator> &v, stream_t stream, cons
   //
   cudaStreamAttrValue stream_attribute;                                                       // Stream level attributes data structure
   stream_attribute.accessPolicyWindow.base_ptr  = reinterpret_cast<void*>(v.data());          // Global Memory data pointer
-  stream_attribute.accessPolicyWindow.num_bytes = 0
+  stream_attribute.accessPolicyWindow.num_bytes = 0;
 
   cudaStreamSetAttribute(stream, cudaStreamAttributeAccessPolicyWindow, &stream_attribute);   // Overwrite the access policy attribute to a CUDA Stream
   cudaCtxResetPersistingL2Cache();                                                            // Remove any persistent lines in L2 
@@ -985,7 +985,7 @@ int main (int argc, char* argv[]) {
    auto stream = streams[0];//with UVM, we use only one compute stream 
 
    // Set L2 cache size
-   p2r_set_l2cache_size(dev_id, 0.75);
+   p2r_set_l2cache_size(dev_id, 0.5);
     
    std::vector<MPTRK, MPTRKAllocator> outtrcks(nevts*nb);
    // migrate output object to dev memory:
@@ -1005,7 +1005,7 @@ int main (int argc, char* argv[]) {
    p2r_wait();
    //
    if constexpr (include_data_transfer == false) {  
-     p2r_l2cache_setaside<MPHIT, MPHITAllocator>(hits,  stream, dev_id, hits.size()*sizeof(MPHIT), 0.5);    
+     p2r_l2cache_setaside<MPHIT, MPHITAllocator>(hits,  stream, dev_id, hits.size()*sizeof(MPHIT) / 2, hits.size()*sizeof(MPHIT) / 2, 0.5);    
    }
    
    gettimeofday(&timecheck, NULL);
@@ -1032,7 +1032,7 @@ int main (int argc, char* argv[]) {
        p2r_prefetch<MPTRK, MPTRKAllocator>(trcks, dev_id, stream);
        p2r_prefetch<MPHIT, MPHITAllocator>(hits,  dev_id, stream);
        //
-       p2r_l2cache_setaside<MPHIT, MPHITAllocator>(hits,  stream, dev_id, hits.size()*sizeof(MPHIT), 0.5);
+       p2r_l2cache_setaside<MPHIT, MPHITAllocator>(hits,  stream, dev_id, hits.size()*sizeof(MPHIT) / 2, hits.size()*sizeof(MPHIT) / 2, 0.5);
      }
 
      launch_p2r_kernel<bsize, nlayer><<<grid, blocks, 0, stream>>>(outtrcks.data(), trcks.data(), hits.data(), outer_loop_range);
