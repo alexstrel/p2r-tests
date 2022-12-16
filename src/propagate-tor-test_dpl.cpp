@@ -17,11 +17,11 @@ dpcpp -std=c++17 -O2 src/propagate-tor-test_dpl.cpp -o test-dpl.exe -Dntrks=8192
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <unistd.h>
+
 #include <iostream>
 #include <chrono>
 #include <iomanip>
-#include <sys/time.h>
+
 
 #include <vector>
 #include <memory>
@@ -275,6 +275,7 @@ void prepareTracks(std::vector<MPTRK, MPTRKAllocator> &trcks, ATRK &inputtrk) {
   //
   return;
 }
+
 
 template<typename MPHITAllocator>
 void prepareHits(std::vector<MPHIT, MPHITAllocator> &hits, std::vector<AHIT>& inputhits) {
@@ -863,8 +864,6 @@ int main (int argc, char* argv[]) {
    printf("produce nevts=%i ntrks=%i smearing by=%f \n", nevts, ntrks, smear);
    printf("NITER=%d\n", NITER);
 
-   long setup_start, setup_stop;
-   struct timeval timecheck;
    //
 #ifdef USE_CPU
    sycl::queue cq(sycl::cpu_selector{});
@@ -880,38 +879,29 @@ int main (int argc, char* argv[]) {
    cl::sycl::usm_allocator<MPTRK, cl::sycl::usm::alloc::shared> MPTRKAllocator(cq);
    cl::sycl::usm_allocator<MPHIT, cl::sycl::usm::alloc::shared> MPHITAllocator(cq);
    //
-   gettimeofday(&timecheck, NULL);
-   setup_start = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
+   auto setup_start = std::chrono::steady_clock::now();
    //
    std::vector<MPTRK, decltype(MPTRKAllocator)> outtrcks(nevts*nb, MPTRKAllocator);
 
    std::vector<MPTRK, decltype(MPTRKAllocator)> trcks(nevts*nb, MPTRKAllocator);
    //
    std::vector<MPHIT, decltype(MPHITAllocator)> hits(nlayer*nevts*nb, MPHITAllocator);
-
-   //create fake objects to emulate data transfers
-   std::vector<MPTRK, decltype(MPTRKAllocator)> h_outtrcks(nevts*nb, MPTRKAllocator);
    //
-   std::vector<MPTRK, decltype(MPTRKAllocator)> h_trcks(nevts*nb, MPTRKAllocator); 
-   prepareTracks<decltype(MPTRKAllocator)>(h_trcks, inputtrk);
+   prepareTracks<decltype(MPTRKAllocator)>(trcks, inputtrk);
    //
-   std::vector<MPHIT, decltype(MPHITAllocator)> h_hits(nlayer*nevts*nb, MPHITAllocator);
-   prepareHits<decltype(MPHITAllocator)>(h_hits, inputhits);
+   prepareHits<decltype(MPHITAllocator)>(hits, inputhits);
    //
    auto policy = oneapi::dpl::execution::make_device_policy(cq);
    //enforce data migration
-   std::copy(policy, h_outtrcks.begin(), h_outtrcks.end(), outtrcks.begin());
+   int HW_SPECIFIC_ADVICE_RO = 0;
+   cq.mem_advise(outtrcks.data(), nevts*nb, HW_SPECIFIC_ADVICE_RO);
    
    if constexpr (include_data_transfer == false){
      //enforce data migration:
-     std::copy(policy, h_trcks.begin(), h_trcks.end(), trcks.begin());
+     auto e1 = cq.prefetch(trcks.data(), nevts*nb);
      //
-     std::copy(policy, h_hits.begin(), h_hits.end(), hits.begin());
-   } else {//do  a regular copy :
-     std::copy(h_trcks.begin(), h_trcks.end(), trcks.begin());
-     //
-     std::copy(h_hits.begin(), h_hits.end(), hits.begin());
-   }
+     auto e2 = cq.prefetch(hits.data(), nlayer*nevts*nb);     
+   } 
 
    const int phys_length      = nevts*nb;
    const int outer_loop_range = phys_length*(enable_gpu_backend ? bsize : 1);//re-scale the exe domain for the cuda backend!
@@ -943,14 +933,25 @@ int main (int argc, char* argv[]) {
                          outtracksPtr[tid].save<N>(obtracks, batch_id);
                        };
 
-   gettimeofday(&timecheck, NULL);
-   setup_stop = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
+                                    
+   auto setup_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - setup_start).count(); // Duration in [s]
 
    printf("done preparing!\n");
+   
+   //create pure host object for the data manipulations
+   std::vector<MPTRK> h_outtrcks{};
+   std::vector<MPTRK> h_trcks{};
+   std::vector<MPHIT> h_hits{};
+   //
+   if constexpr (include_data_transfer){
+      h_outtrcks.reserve(nevts*nb);
+      h_trcks.reserve(nevts*nb);      
+      h_outtrcks.reserve(nlayer*nevts*nb);
+   }   
 
    printf("Size of struct MPTRK trk[] = %ld\n", nevts*nb*sizeof(MPTRK));
    printf("Size of struct MPTRK outtrk[] = %ld\n", nevts*nb*sizeof(MPTRK));
-   printf("Size of struct struct MPHIT hit[] = %ld\n", nevts*nb*sizeof(MPHIT));
+   printf("Size of struct struct MPHIT hit[] = %ld\n", nlayer*nevts*nb*sizeof(MPHIT));
 
    double wall_time = 0.0;
 
@@ -982,9 +983,9 @@ int main (int argc, char* argv[]) {
      }
    } //end of itr loop
 
-   printf("setup time time=%f (s)\n", (setup_stop-setup_start)*0.001);
+   printf("setup time time=%f (s)\n", setup_seconds);
    printf("done ntracks=%i tot time=%f (s) time/trk=%e (s)\n", nevts*ntrks*int(NITER), wall_time, wall_time/(nevts*ntrks*int(NITER)));
-   printf("formatted %i %i %i %i %i %f 0 %f %i\n",int(NITER),nevts, ntrks, bsize, nb, wall_time, (setup_stop-setup_start)*0.001, -1);
+   printf("formatted %i %i %i %i %i %f 0 %f %i\n",int(NITER),nevts, ntrks, bsize, nb, wall_time, setup_seconds, -1);
 
    auto outtrk = outtrcks.data();
 
