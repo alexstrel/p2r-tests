@@ -27,6 +27,8 @@ nvc++ -O2 -std=c++20 --gcc-toolchain=path-to-gnu-compiler -stdpar=multicore ./sr
 #include <execution>
 #include <random>
 
+#include <span>
+
 #include <experimental/mdspan>
 //
 #include <experimental/stdexec/execution.hpp>
@@ -1142,9 +1144,9 @@ int main (int argc, char* argv[]) {
    p2r_barrier();//still needed even for stdexec
 
    // create compute kernel
-   auto p2r_kernels = [=,btracksPtr    = trcks.data(),
-                         outtracksPtr  = outtrcks.data(),
-                         bhitsPtr      = hits.data()] (const auto i) {
+   auto p2r_kernels = [=,btracksView    = std::span{trcks},
+                         outtracksView  = std::span{outtrcks},
+                         bhitsView      = std::span{hits}] (const auto i) {
                          //  
                          constexpr int N      = enable_cuda ? 1 : bsize;
                          //
@@ -1153,20 +1155,20 @@ int main (int argc, char* argv[]) {
                          //
                          MPTRK_<N> obtracks;
                          //
-                         const auto& btracks = btracksPtr[tid].load<N>(batch_id);
+                         const auto& btracks = btracksView[tid].load<N>(batch_id);
                          //
                          constexpr int layers = nlayer;
                          //
                          for(int layer = 0; layer < layers; ++layer) {
                            //
-                           const auto& bhits = bhitsPtr[layer+layers*tid].load<N>(batch_id);
+                           const auto& bhits = bhitsView[layer+layers*tid].load<N>(batch_id);
                            //
                            propagateToR<N>(btracks.cov, btracks.par, btracks.q, bhits.pos, obtracks.cov, obtracks.par);
                            KalmanUpdate<N>(obtracks.cov, obtracks.par, bhits.cov, bhits.pos);
                            //
                          }
                          //
-                         outtracksPtr[tid].save<N>(obtracks, batch_id);
+                         outtracksView[tid].save<N>(obtracks, batch_id);
                        };
 
    // create regular prefetchers:
